@@ -458,54 +458,57 @@ export default function AnalyticsPage() {
       </motion.div>
 
       {/* Pie */}
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.25 }}
-        className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5"
-      >
-        <h3 className="text-sm font-semibold text-white mb-4">Task Distribution</h3>
+<motion.div
+  initial={{ opacity: 0, y: 16 }}
+  animate={{ opacity: 1, y: 0 }}
+  transition={{ delay: 0.25 }}
+  className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5"
+>
+  <h3 className="text-sm font-semibold text-white mb-4">
+    Task Distribution
+  </h3>
 
-        {pieData.length > 0 ? (
-          <div className="flex items-center gap-4">
-            <ResponsiveContainer width={160} height={160}>
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={45}
-                  outerRadius={70}
-                  paddingAngle={3}
-                  dataKey="value"
-                >
-                  {pieData.map((entry) => (
-                    <Cell key={entry.name} fill={entry.color} />
-                  ))}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
+  {pieData.length > 0 ? (
+    <div className="flex items-center gap-4">
+      <ResponsiveContainer width={160} height={160}>
+        <PieChart>
+          <Pie
+            data={pieData}
+            cx="50%"
+            cy="50%"
+            innerRadius={45}
+            outerRadius={70}
+            paddingAngle={3}
+            dataKey="value"
+          >
+            {pieData.map((entry) => (
+              <Cell key={entry.name} fill={entry.color} />
+            ))}
+          </Pie>
+        </PieChart>
+      </ResponsiveContainer>
 
-            <div className="space-y-2">
-              {pieData.map((d) => (
-                <div key={d.name} className="flex items-center gap-2">
-                  <div
-                    className="w-2.5 h-2.5 rounded-full"
-                    style={{ backgroundColor: d.color }}
-                  />
-                  <span className="text-xs text-slate-400">{d.name}</span>
-                  <span className="text-xs font-bold text-white ml-auto">{d.value}</span>
-                </div>
-              ))}
-            </div>
+      <div className="space-y-2">
+        {pieData.map((d) => (
+          <div key={d.name} className="flex items-center gap-2">
+            <div
+              className="w-2.5 h-2.5 rounded-full"
+              style={{ backgroundColor: d.color }}
+            />
+            <span className="text-xs text-slate-400">{d.name}</span>
+            <span className="text-xs font-bold text-white ml-auto">
+              {d.value}
+            </span>
           </div>
-        ) : (
-          <div className="flex items-center justify-center h-40">
-            <p className="text-slate-500 text-sm">No tasks yet</p>
-          </div>
-        )}
-      </motion.div>
-
+        ))}
+      </div>
+    </div>
+  ) : (
+    <div className="flex items-center justify-center h-40">
+      <p className="text-slate-500 text-sm">No tasks yet</p>
+    </div>
+  )}
+</motion.div>
       {/* Charts Row 2 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <motion.div
