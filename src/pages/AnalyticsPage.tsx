@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis,
@@ -34,8 +34,64 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
 export default function AnalyticsPage() {
   const { activeWorkspace, members, tasks, files } = useWorkspace();
   const { user } = useAuth();
+  const [heatmapScope, setHeatmapScope] = useState<'me' | 'team'>('me');
 
-  // All members — no role filtering, everyone sees everyone
+  const currentMember = members.find(m => m.user_id === user?.id);
+  const isLeader = currentMember?.role === 'owner';
+
+  const parseTimelineDays = (description?: string) => {
+    if (!description) return 0;
+    const match = description.match(/Timeline:\s*(\d+)\s*days/i);
+    return match ? Number(match[1]) : 0;
+  };
+
+  const timelineDays = parseTimelineDays(activeWorkspace?.description);
+  const totalEstimatedDays = tasks.reduce((sum, task) => sum + (task.estimated_days || 0), 0);
+  const completedEstimatedDays = tasks.filter(t => t.status === 'completed').reduce((sum, task) => sum + (task.estimated_days || 0), 0);
+  const timelineCompletion = totalEstimatedDays > 0 ? Math.round((completedEstimatedDays / totalEstimatedDays) * 100) : 0;
+
+  const heatmapWindow = 28;
+  const heatmapDates = Array.from({ length: heatmapWindow }, (_, idx) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (heatmapWindow - 1 - idx));
+    return d;
+  });
+
+  const heatmapCounts = useMemo(() => {
+    return tasks.reduce<Record<string, number>>((acc, task) => {
+      if (task.status !== 'completed' || !task.completed_at || !task.assigned_to) return acc;
+      const dayKey = task.completed_at.slice(0, 10);
+      const key = `${task.assigned_to}:${dayKey}`;
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+  }, [tasks]);
+
+  const getHeatValue = (userId: string, dateKey: string) => {
+    const count = heatmapCounts[`${userId}:${dateKey}`] || 0;
+    if (count === 0) return 'bg-slate-800';
+    if (count === 1) return 'bg-cyan-500/40';
+    if (count === 2) return 'bg-cyan-500/70';
+    return 'bg-cyan-400';
+  };
+
+  const memberHeatmap = useMemo(() => {
+    const targetIds = isLeader && heatmapScope === 'team'
+      ? members.map(m => m.user_id)
+      : [currentMember?.user_id ?? ''];
+
+    return targetIds.map(userId => ({
+      userId,
+      rows: Array.from({ length: 4 }, (_, week) => {
+        return heatmapDates.slice(week * 7, week * 7 + 7).map(date => ({
+          date,
+          value: getHeatValue(userId, date.toISOString().slice(0, 10)),
+          count: heatmapCounts[`${userId}:${date.toISOString().slice(0, 10)}`] || 0,
+        }));
+      }),
+    }));
+  }, [heatmapScope, heatmapDates, heatmapCounts, members, currentMember?.user_id, isLeader]);
+
   const memberStats = useMemo(() => {
     const totalCompleted = tasks.filter(t => t.status === 'completed').length;
     return members.map((m, idx) => {
@@ -132,40 +188,86 @@ export default function AnalyticsPage() {
         ))}
       </motion.div>
 
-      {/* Charts Row 1 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Leaderboard */}
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-          className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5">
-          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
-            <Trophy size={14} className="text-yellow-400" /> Contribution Leaderboard
-          </h3>
-          <div className="space-y-3">
-            {memberStats.map((m, i) => (
-              <div key={m.id} className="flex items-center gap-3">
-                <span className={`text-xs font-bold w-5 ${i === 0 ? 'text-yellow-400' : i === 1 ? 'text-slate-400' : i === 2 ? 'text-yellow-700' : 'text-slate-600'}`}>
-                  #{i + 1}
-                </span>
-                <img src={m.profile?.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(m.name)}`}
-                  alt={m.name} className="w-7 h-7 rounded-full flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-white font-medium truncate">
-                      {m.name}{m.isCurrentUser && <span className="text-blue-400 ml-1">(you)</span>}
-                    </span>
-                    <span className="text-xs font-bold ml-2" style={{ color: m.color }}>{m.contributionScore}%</span>
-                  </div>
-                  <div className="h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
-                    <motion.div initial={{ width: 0 }} animate={{ width: `${m.contributionScore}%` }}
-                      transition={{ duration: 1, delay: 0.3 + i * 0.05 }}
-                      className="h-full rounded-full" style={{ backgroundColor: m.color }} />
-                  </div>
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+        className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5">
+        <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+          <Trophy size={14} className="text-yellow-400" /> Contribution Leaderboard
+        </h3>
+        <div className="space-y-3">
+          {memberStats.map((m, i) => (
+            <div key={m.id} className="flex items-center gap-3">
+              <span className={`text-xs font-bold w-5 ${i === 0 ? 'text-yellow-400' : i === 1 ? 'text-slate-400' : i === 2 ? 'text-yellow-700' : 'text-slate-600'}`}>
+                #{i + 1}
+              </span>
+              <img src={m.profile?.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(m.name)}`}
+                alt={m.name} className="w-7 h-7 rounded-full flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-white font-medium truncate">
+                    {m.name}{m.isCurrentUser && <span className="text-blue-400 ml-1">(you)</span>}
+                  </span>
+                  <span className="text-xs font-bold ml-2" style={{ color: m.color }}>{m.contributionScore}%</span>
                 </div>
-                {i === 0 && <Award size={14} className="text-yellow-400 flex-shrink-0" />}
+                <div className="h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
+                  <motion.div initial={{ width: 0 }} animate={{ width: `${m.contributionScore}%` }}
+                    transition={{ duration: 1, delay: 0.3 + i * 0.05 }}
+                    className="h-full rounded-full" style={{ backgroundColor: m.color }} />
+                </div>
               </div>
-            ))}
+              {i === 0 && <Award size={14} className="text-yellow-400 flex-shrink-0" />}
+            </div>
+          ))}
+        </div>
+
+        {/* Compact Heatmap under leaderboard */}
+        <div className="mt-6 pt-6 border-t border-white/[0.06]">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h4 className="text-xs font-semibold text-white">Activity Heatmap</h4>
+              <p className="text-[11px] text-slate-500 mt-1">Last 4 weeks</p>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setHeatmapScope('me')}
+                className={`rounded-full px-2.5 py-1.5 text-[11px] font-semibold transition ${heatmapScope === 'me' ? 'bg-blue-500 text-white' : 'bg-white/[0.04] text-slate-400 hover:bg-white/[0.08]'}`}
+              >
+                Me
+              </button>
+              {isLeader && (
+                <button
+                  onClick={() => setHeatmapScope('team')}
+                  className={`rounded-full px-2.5 py-1.5 text-[11px] font-semibold transition ${heatmapScope === 'team' ? 'bg-cyan-500 text-slate-950' : 'bg-white/[0.04] text-slate-400 hover:bg-white/[0.08]'}`}
+                >
+                  Team
+                </button>
+              )}
+            </div>
           </div>
-        </motion.div>
+
+          {memberHeatmap.length === 0 ? (
+            <p className="text-slate-500 text-[11px]">No completed tasks yet</p>
+          ) : (
+            <div className="space-y-2.5">
+              {memberHeatmap.map((row) => {
+                const member = members.find(m => m.user_id === row.userId);
+                return (
+                  <div key={row.userId}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[11px] font-medium text-slate-300">{member?.profile?.full_name || 'You'}</span>
+                      <span className="text-[10px] text-slate-500">{row.rows.flat().reduce((sum, cell) => sum + cell.count, 0)}</span>
+                    </div>
+                    <div className="grid grid-cols-7 gap-0.5">
+                      {row.rows.flat().map(cell => (
+                        <div key={`${row.userId}-${cell.date.toISOString()}`} className={`h-5 rounded-sm ${cell.value}`} title={`${cell.count} completed on ${cell.date.toLocaleDateString()}`} />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </motion.div>
 
         {/* Pie */}
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}

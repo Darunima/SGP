@@ -2,13 +2,13 @@ import { useState, ReactNode, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Layers, LayoutDashboard, CheckSquare, FolderOpen,
-  BarChart3, Bell, Settings, Plus, ChevronDown,
+  BarChart3, Bell, MessageCircle, Settings, Plus, ChevronDown,
   LogOut, Users, Copy, Check, Hash, Flame, Menu, X
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useWorkspace } from '../contexts/WorkspaceContext';
 
-type Page = 'dashboard' | 'tasks' | 'files' | 'analytics' | 'notifications' | 'settings';
+type Page = 'dashboard' | 'tasks' | 'files' | 'analytics' | 'community' | 'notifications' | 'settings';
 type Props = { currentPage: Page; onNavigate: (page: Page) => void; children: ReactNode };
 
 const NAV = [
@@ -16,12 +16,13 @@ const NAV = [
   { id: 'tasks',     label: 'Tasks',     icon: CheckSquare },
   { id: 'files',     label: 'Files',     icon: FolderOpen },
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+  { id: 'community', label: 'Community', icon: MessageCircle },
   { id: 'notifications', label: 'Notifications', icon: Bell },
 ] as const;
 
 export default function Layout({ currentPage, onNavigate, children }: Props) {
   const { profile, signOut } = useAuth();
-  const { workspaces, activeWorkspace, setActiveWorkspace, createWorkspace, joinWorkspace, unreadCount } = useWorkspace();
+  const { workspaces, activeWorkspace, setActiveWorkspace, createWorkspace, joinWorkspace, unreadCount, unreadChatCount } = useWorkspace();
 
   const [collapsed, setCollapsed] = useState(false);   // desktop collapse
   const [drawerOpen, setDrawerOpen] = useState(false);  // mobile drawer
@@ -30,6 +31,7 @@ export default function Layout({ currentPage, onNavigate, children }: Props) {
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [copied, setCopied] = useState(false);
   const [createForm, setCreateForm] = useState({ title: '', description: '' });
+  const [createTimelineDays, setCreateTimelineDays] = useState<number | ''>('');
   const [joinCode, setJoinCode] = useState('');
   const [joinError, setJoinError] = useState('');
   const [createError, setCreateError] = useState('');
@@ -51,9 +53,13 @@ export default function Layout({ currentPage, onNavigate, children }: Props) {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault(); setCreating(true); setCreateError('');
-    const ws = await createWorkspace(createForm.title, createForm.description);
-    if (ws) { setShowCreateModal(false); setCreateForm({ title: '', description: '' }); }
-    else setCreateError('Failed to create workspace. Please try again.');
+    const timelineDays = Number(createTimelineDays) || 0;
+    const ws = await createWorkspace(createForm.title, createForm.description, timelineDays);
+    if (ws) {
+      setShowCreateModal(false);
+      setCreateForm({ title: '', description: '' });
+      setCreateTimelineDays('');
+    } else setCreateError('Failed to create workspace. Please try again.');
     setCreating(false);
   }
 
@@ -145,6 +151,11 @@ export default function Layout({ currentPage, onNavigate, children }: Props) {
               }`}>
               <Icon size={16} />
               {label}
+              {id === 'community' && unreadChatCount > 0 && (
+                <span className="ml-auto bg-cyan-500 text-slate-950 text-xs rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                  {unreadChatCount > 9 ? '9+' : unreadChatCount}
+                </span>
+              )}
               {id === 'notifications' && unreadCount > 0 && (
                 <span className="ml-auto bg-blue-500 text-white text-xs rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
                   {unreadCount > 9 ? '9+' : unreadCount}
@@ -283,6 +294,14 @@ export default function Layout({ currentPage, onNavigate, children }: Props) {
             <span className="text-sm font-bold text-white tracking-tight">Collabrix</span>
           </div>
           <div className="flex items-center gap-2">
+            <button onClick={() => navigate('community')} className="relative text-slate-400 hover:text-white transition-colors p-1">
+              <MessageCircle size={20} />
+              {unreadChatCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-cyan-500 text-slate-950 text-[10px] rounded-full flex items-center justify-center">
+                  {unreadChatCount > 9 ? '9+' : unreadChatCount}
+                </span>
+              )}
+            </button>
             <button onClick={() => navigate('notifications')} className="relative text-slate-400 hover:text-white transition-colors p-1">
               <Bell size={20} />
               {unreadCount > 0 && (
@@ -315,6 +334,13 @@ export default function Layout({ currentPage, onNavigate, children }: Props) {
                 <textarea value={createForm.description} onChange={e => setCreateForm(f => ({ ...f, description: e.target.value }))}
                   placeholder="Brief project description..." rows={3}
                   className="w-full bg-white/[0.05] border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-blue-500/50 transition-all resize-none" />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 mb-1.5 block">Timeline (days)</label>
+                <input value={createTimelineDays} onChange={e => setCreateTimelineDays(e.target.value === '' ? '' : Number(e.target.value))}
+                  type="number" min={1}
+                  placeholder="e.g. 30"
+                  className="w-full bg-white/[0.05] border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-blue-500/50 transition-all" />
               </div>
               {createError && <p className="text-red-400 text-sm text-center">{createError}</p>}
               <button type="submit" disabled={creating}

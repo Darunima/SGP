@@ -38,12 +38,19 @@ function formatRelativeTime(dateStr: string): string {
   return `${days}d ago`;
 }
 
+function formatFullDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true,
+  });
+}
+
 export default function NotificationsPage() {
   const { activeWorkspace, notifications, markNotificationsRead } = useWorkspace();
   const { user } = useAuth();
 
-  const unread = notifications.filter(n => !n.read_by.includes(user?.id ?? ''));
-  const read = notifications.filter(n => n.read_by.includes(user?.id ?? ''));
+  const sortedNotifications = [...notifications].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  const unread = sortedNotifications.filter(n => !n.read_by.includes(user?.id ?? ''));
+  const read = sortedNotifications.filter(n => n.read_by.includes(user?.id ?? ''));
 
   if (!activeWorkspace) {
     return (
@@ -136,11 +143,11 @@ function NotificationItem({ notif, idx, isUnread }: { notif: Notification; idx: 
             <div className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0 mt-1.5" />
           )}
         </div>
-        <div className="flex items-center gap-2 mt-1">
+        <div className="flex flex-wrap items-center gap-2 mt-1">
           {notif.actor && (
             <img src={notif.actor.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${notif.actor.full_name || 'Actor'}`} alt={notif.actor.full_name} className="w-4 h-4 rounded-full" />
           )}
-          <p className="text-xs text-slate-500">{formatRelativeTime(notif.created_at)}</p>
+          <p className="text-xs text-slate-500">{formatRelativeTime(notif.created_at)} · {formatFullDate(notif.created_at)}</p>
         </div>
       </div>
     </motion.div>

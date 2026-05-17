@@ -7,10 +7,11 @@ import DashboardPage from './pages/DashboardPage';
 import TasksPage from './pages/TasksPage';
 import FilesPage from './pages/FilesPage';
 import AnalyticsPage from './pages/AnalyticsPage';
+import CommunityPage from './pages/CommunityPage';
 import NotificationsPage from './pages/NotificationsPage';
 import SettingsPage from './pages/SettingsPage';
 
-type Page = 'dashboard' | 'tasks' | 'files' | 'analytics' | 'notifications' | 'settings';
+type Page = 'dashboard' | 'tasks' | 'files' | 'analytics' | 'community' | 'notifications' | 'settings';
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -54,6 +55,7 @@ function AppInner({ currentPage, setCurrentPage }: { currentPage: Page; setCurre
     tasks: <TasksPage />,
     files: <FilesPage />,
     analytics: <AnalyticsPage />,
+    community: <CommunityPage />,
     notifications: <NotificationsPage />,
     settings: <SettingsPage />,
   };

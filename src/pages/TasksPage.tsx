@@ -96,10 +96,12 @@ export default function TasksPage() {
     setAiLoading(true); setAiError('');
     try {
       const memberList = members.map(m => ({ id: m.user_id, name: m.profile?.full_name || 'Member' }));
+      const timelineMatch = activeWorkspace.description.match(/Timeline:\s*(\d+)\s*days/i);
+      const timelineHint = timelineMatch ? `PROJECT TIMELINE: ${timelineMatch[1]} days\n\n` : '';
       const prompt = `You are a senior software architect and project manager for a student hackathon team.
 Analyze this project idea and split it into realistic, balanced tasks for the team.
 
-PROJECT IDEA: ${aiPrompt}
+${timelineHint}PROJECT IDEA: ${aiPrompt}
 
 TEAM MEMBERS (${memberList.length} people):
 ${memberList.map((m, i) => `${i + 1}. ${m.name} (id: ${m.id})`).join('\n')}

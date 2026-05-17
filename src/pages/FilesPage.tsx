@@ -40,6 +40,17 @@ function getFileColor(fileType: string, fileName: string): string {
   return 'text-slate-400';
 }
 
+function getFileCategory(fileType: string, fileName: string) {
+  const ext = fileName.split('.').pop()?.toLowerCase() || '';
+  if (['pdf'].includes(ext)) return 'pdf';
+  if (['doc', 'docx'].includes(ext)) return 'docs';
+  if (['json'].includes(ext)) return 'json';
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext) || fileType.startsWith('image/')) return 'images';
+  if (['js', 'ts', 'jsx', 'tsx', 'py', 'java', 'cpp', 'go', 'rs', 'html', 'css'].includes(ext)) return 'code';
+  if (['zip', 'tar', 'gz', 'rar', '7z'].includes(ext)) return 'archive';
+  return 'all';
+}
+
 export default function FilesPage() {
   const { activeWorkspace, files, uploadFile, members } = useWorkspace();
   const { user } = useAuth();
@@ -47,11 +58,15 @@ export default function FilesPage() {
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [search, setSearch] = useState('');
+  const [filterType, setFilterType] = useState<'all' | 'pdf' | 'docs' | 'json' | 'images' | 'code' | 'archive'>('all');
 
-  const filtered = files.filter(f =>
-    f.file_name.toLowerCase().includes(search.toLowerCase()) ||
-    f.uploader?.full_name?.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = files.filter(f => {
+    const matchesQuery = f.file_name.toLowerCase().includes(search.toLowerCase()) ||
+      f.uploader?.full_name?.toLowerCase().includes(search.toLowerCase());
+    const category = getFileCategory(f.file_type, f.file_name);
+    const matchesType = filterType === 'all' || category === filterType;
+    return matchesQuery && matchesType;
+  });
 
   async function handleFiles(fileList: FileList) {
     setUploading(true);
@@ -104,13 +119,28 @@ export default function FilesPage() {
       </div>
 
       {/* Search */}
-      <div className="relative">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-        <input
-          value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="Search files..."
-          className="w-full bg-white/[0.03] border border-white/[0.07] rounded-xl pl-9 pr-4 py-2.5 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-blue-500/50 transition-all"
-        />
+      <div className="grid gap-3 sm:grid-cols-[1fr_180px]">
+        <div className="relative">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+          <input
+            value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search files..."
+            className="w-full bg-white/[0.03] border border-white/[0.07] rounded-xl pl-9 pr-4 py-2.5 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-blue-500/50 transition-all"
+          />
+        </div>
+        <select
+          value={filterType}
+          onChange={e => setFilterType(e.target.value as typeof filterType)}
+          className="w-full bg-white/[0.03] border border-white/[0.07] rounded-xl px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-blue-500/50 transition-all"
+        >
+          <option value="all">All files</option>
+          <option value="pdf">PDF</option>
+          <option value="docs">Docs</option>
+          <option value="json">JSON</option>
+          <option value="images">Images</option>
+          <option value="code">Code</option>
+          <option value="archive">Archive</option>
+        </select>
       </div>
 
       {/* Drop Zone */}

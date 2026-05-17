@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Trophy, Flame, TrendingUp, Users, CheckCircle2,
@@ -7,6 +7,8 @@ import {
 import { useWorkspace } from '../contexts/WorkspaceContext';
 import { useAuth } from '../contexts/AuthContext';
 import { MemberHeaderOverview } from '../components/MemberHeaderOverview';
+import { FloatingNotificationsContainer, FloatingNotification } from '../components/FloatingNotificationsContainer';
+import { supabase } from '../lib/supabase';
 
 const MEMBER_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
 
@@ -40,6 +42,8 @@ function CircularProgress({ value, size = 52, strokeWidth = 3, color = '#3b82f6'
 export default function DashboardPage() {
   const { activeWorkspace, members, tasks } = useWorkspace();
   const { user } = useAuth();
+  const [floatingNotifications, setFloatingNotifications] = useState<FloatingNotification[]>([]);
+  const [seenUpdates, setSeenUpdates] = useState<Set<string>>(new Set());
 
   const stats = useMemo(() => {
     const total = tasks.length;
@@ -49,6 +53,17 @@ export default function DashboardPage() {
     const completionPct = total > 0 ? Math.round((completed / total) * 100) : 0;
     return { total, completed, inProgress, pending, completionPct };
   }, [tasks]);
+
+  const parseTimelineDays = (description?: string) => {
+    if (!description) return 0;
+    const match = description.match(/Timeline:\s*(\d+)\s*days/i);
+    return match ? Number(match[1]) : 0;
+  };
+
+  const timelineDays = parseTimelineDays(activeWorkspace?.description);
+  const totalEstimatedDays = tasks.reduce((sum, task) => sum + (task.estimated_days || 0), 0);
+  const completedEstimatedDays = tasks.filter(t => t.status === 'completed').reduce((sum, task) => sum + (task.estimated_days || 0), 0);
+  const timelineProgress = totalEstimatedDays > 0 ? Math.round((completedEstimatedDays / totalEstimatedDays) * 100) : 0;
 
   // All members — no role filtering
   const memberStats = useMemo(() => {
@@ -66,6 +81,59 @@ export default function DashboardPage() {
       };
     }).sort((a, b) => b.contribution - a.contribution);
   }, [members, tasks, user]);
+
+  const miniUpdates = useMemo(() => {
+    const topMember = memberStats[0];
+    const activeMember = memberStats.find(m => m.inProgressCount > 0) ?? topMember;
+    return [
+      {
+        title: `Project is ${stats.completionPct}% complete`,
+        detail: stats.total > 0 ? `${stats.completed}/${stats.total} tasks finished` : 'No tasks started yet',
+      },
+      {
+        title: topMember ? `${topMember.profile?.full_name || 'A member'} completed ${topMember.completedCount}/${topMember.totalTasks} tasks` : 'No team activity yet',
+        detail: topMember ? `${topMember.contribution}% completion rate` : 'Add tasks to begin tracking',
+      },
+      {
+        title: activeMember ? `${activeMember.profile?.full_name || 'Someone'} is highly active` : 'No active contributors yet',
+        detail: activeMember ? `${activeMember.inProgressCount} current tasks in progress` : 'Assign more tasks to kickstart the team',
+      },
+      ...(timelineDays > 0 ? [{
+        title: `Timeline target: ${timelineDays} days`,
+        detail: `Estimated work progress ${timelineProgress}% of total effort`,
+      }] : []),
+    ];
+  }, [memberStats, stats, timelineDays, timelineProgress]);
+
+  // Auto-show floating notifications on mount or when updates change
+  useEffect(() => {
+    const newUpdates = miniUpdates.filter(update => !seenUpdates.has(update.title));
+    if (newUpdates.length > 0) {
+      const floating: FloatingNotification[] = newUpdates.map((update, idx) => ({
+        id: `update-${idx}-${Date.now()}`,
+        title: update.title,
+        detail: update.detail,
+        type: 'update',
+      }));
+      setFloatingNotifications(prev => [...prev, ...floating]);
+      setSeenUpdates(prev => new Set([...prev, ...newUpdates.map(u => u.title)]));
+    }
+  }, [miniUpdates, seenUpdates]);
+
+  async function handleDismissNotification(id: string) {
+    setFloatingNotifications(prev => prev.filter(n => n.id !== id));
+    
+    // Find the notification and save it to the database
+    const dismissed = floatingNotifications.find(n => n.id === id);
+    if (dismissed && activeWorkspace && user) {
+      await supabase.from('notifications').insert({
+        workspace_id: activeWorkspace.id,
+        actor_id: user.id,
+        message: dismissed.title,
+        event_type: 'project_update',
+      });
+    }
+  }
 
   const tasksByCategory = useMemo(() => {
     const cats: Record<string, number> = {};
@@ -105,7 +173,12 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <>
+      <FloatingNotificationsContainer
+        notifications={floatingNotifications}
+        onDismiss={handleDismissNotification}
+      />
+      <div className="p-6 space-y-6">
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }}>
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
@@ -154,17 +227,15 @@ export default function DashboardPage() {
         ))}
       </motion.div>
 
-      {/* Overall Progress */}
-      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }}
         className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5">
+        <h3 className="text-sm font-semibold text-white mb-4">Overall Progress</h3>
         <div className="flex items-center justify-between mb-3">
-          <span className="text-sm font-medium text-white">Overall Progress</span>
+          <span className="text-sm text-slate-300">Project completion</span>
           <span className="text-sm font-bold text-blue-400">{stats.completionPct}%</span>
         </div>
         <div className="h-2 bg-white/[0.06] rounded-full overflow-hidden">
-          <motion.div initial={{ width: 0 }} animate={{ width: `${stats.completionPct}%` }}
-            transition={{ duration: 1.2, ease: 'easeOut', delay: 0.3 }}
-            className="h-full rounded-full bg-gradient-to-r from-blue-600 to-cyan-400" />
+          <div className="h-full rounded-full bg-gradient-to-r from-blue-600 to-cyan-400" style={{ width: `${stats.completionPct}%` }} />
         </div>
         <div className="flex items-center gap-4 mt-3 text-xs text-slate-400">
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500" />{stats.completed} completed</span>
@@ -280,6 +351,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="text-center text-[11px] text-slate-600">Built for collaboration • Tasks auto-update in real time</div>
-    </div>
+      </div>
+    </>
   );
 }
