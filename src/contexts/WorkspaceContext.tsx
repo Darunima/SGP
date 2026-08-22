@@ -90,24 +90,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const ownerId    = workspaceRes.data?.owner_id as string | undefined;
     const chatData   = (chatRes.data   ?? []) as ChatMessage[];
 
-    // Reconstruct full member list bypassing RLS restrictions
-    const discoveredIds = new Set<string>();
-    rawMembers.forEach(m => discoveredIds.add(m.user_id));
-    if (ownerId) discoveredIds.add(ownerId);
-    taskData.forEach(t => {
-      if (t.assigned_to) discoveredIds.add(t.assigned_to);
-      if (t.created_by)  discoveredIds.add(t.created_by);
-    });
-    notifData.forEach(n => { if (n.actor_id)    discoveredIds.add(n.actor_id); });
-    fileData.forEach(f  => { if (f.uploaded_by) discoveredIds.add(f.uploaded_by); });
-    chatData.forEach(c  => { if (c.user_id)     discoveredIds.add(c.user_id); });
+    // Only show actual workspace members. Do not reconstruct ghost users from task/file/chat activity,
+    // otherwise a removed member can reappear if they previously created tasks or chat messages.
+    const memberUserIds = new Set<string>();
+    rawMembers.forEach(m => memberUserIds.add(m.user_id));
+    if (ownerId) memberUserIds.add(ownerId);
 
-    const allUserIds = [...discoveredIds];
+    const allUserIds = [...memberUserIds];
     let finalMembers = rawMembers;
 
     if (allUserIds.length > 0) {
       const { data: profilesData } = await supabase.from('profiles').select('*').in('id', allUserIds);
-      const profileMap     = Object.fromEntries((profilesData ?? []).map(p => [p.id, p]));
+      const profileMap = Object.fromEntries((profilesData ?? []).map(p => [p.id, p]));
       const knownMemberMap = Object.fromEntries(rawMembers.map(m => [m.user_id, m]));
 
       finalMembers = allUserIds.map(uid => {
