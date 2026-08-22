@@ -7,39 +7,39 @@ export type UserRole = 'leader' | 'admin' | 'member';
  */
 export function hasRole(member: WorkspaceMember | null | undefined, requiredRole: 'leader' | 'admin' | 'member'): boolean {
   if (!member) return false;
-  
-  const roleHierarchy = {
-    'member': 0,
-    'leader': 1,
-    'admin': 2,
+
+  const roleHierarchy: Record<'owner' | 'leader' | 'admin' | 'member', number> = {
+    owner: 3,
+    leader: 2,
+    admin: 1,
+    member: 0,
   };
-  
-  const memberRoleLevel = roleHierarchy[member.role as 'owner' | 'member'] ?? 
-    (member.role === 'owner' ? 2 : 0);
-  const requiredLevel = roleHierarchy[requiredRole];
-  
+
+  const memberRoleLevel = roleHierarchy[member.role] ?? 0;
+  const requiredLevel = roleHierarchy[requiredRole] ?? 0;
+
   return memberRoleLevel >= requiredLevel;
 }
 
 /**
- * Check if member is owner or admin
+ * Check if member is owner or leader
  */
 export function isLeaderOrAdmin(member: WorkspaceMember | null | undefined): boolean {
-  return member?.role === 'owner' || member?.role === 'leader';
+  return member?.role === 'owner' || member?.role === 'leader' || member?.role === 'admin';
 }
 
 /**
  * Check if member is owner/admin or can perform action
  */
 export function canManageTeam(member: WorkspaceMember | null | undefined): boolean {
-  return member?.role === 'owner';
+  return member?.role === 'owner' || member?.role === 'leader' || member?.role === 'admin';
 }
 
 /**
  * Check if member can use AI features
  */
 export function canUseAIFeatures(member: WorkspaceMember | null | undefined): boolean {
-  return member?.role === 'owner';
+  return member?.role === 'owner' || member?.role === 'leader';
 }
 
 /**

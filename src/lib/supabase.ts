@@ -31,7 +31,7 @@ export type WorkspaceMember = {
   id: string;
   workspace_id: string;
   user_id: string;
-  role: 'owner' | 'member';
+  role: 'owner' | 'leader' | 'admin' | 'member';
   contribution_score: number;
   tasks_completed: number;
   tasks_pending: number;

@@ -40,10 +40,11 @@ function CircularProgress({ value, size = 52, strokeWidth = 3, color = '#3b82f6'
 }
 
 export default function DashboardPage() {
-  const { activeWorkspace, members, tasks } = useWorkspace();
+  const { activeWorkspace, members, tasks, removeMember } = useWorkspace();
   const { user } = useAuth();
   const [floatingNotifications, setFloatingNotifications] = useState<FloatingNotification[]>([]);
   const [seenUpdates, setSeenUpdates] = useState<Set<string>>(new Set());
+  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
 
   const stats = useMemo(() => {
     const total = tasks.length;
@@ -133,6 +134,18 @@ export default function DashboardPage() {
         event_type: 'project_update',
       });
     }
+  }
+
+  async function handleRemoveMember(userId: string) {
+    if (!user || !activeWorkspace) return;
+    setRemovingMemberId(userId);
+
+    const { error } = await removeMember(userId);
+    if (error) {
+      alert(error);
+    }
+
+    setRemovingMemberId(null);
   }
 
   const tasksByCategory = useMemo(() => {
@@ -294,6 +307,17 @@ export default function DashboardPage() {
                   transition={{ duration: 1, delay: 0.4 + idx * 0.05 }}
                   className="h-full rounded-full" style={{ backgroundColor: m.color }} />
               </div>
+
+              {members.find(member => member.user_id === user?.id)?.role === 'owner' && m.role !== 'owner' && !m.isCurrentUser && (
+                <button
+                  type="button"
+                  onClick={() => handleRemoveMember(m.user_id)}
+                  disabled={removingMemberId === m.user_id}
+                  className="mt-3 w-full rounded-xl border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs font-medium text-red-300 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {removingMemberId === m.user_id ? 'Removing...' : 'Remove member'}
+                </button>
+              )}
             </motion.div>
           ))}
         </div>

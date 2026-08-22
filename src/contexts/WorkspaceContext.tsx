@@ -16,6 +16,7 @@ type WorkspaceContextType = {
   setActiveWorkspace: (ws: Workspace) => void;
   createWorkspace: (title: string, description: string, timelineDays?: number) => Promise<Workspace | null>;
   joinWorkspace: (inviteCode: string) => Promise<{ error: string | null; workspace?: Workspace }>;
+  removeMember: (userId: string) => Promise<{ error: string | null; removed?: boolean }>;
   createTask: (task: Partial<Task>) => Promise<void>;
   updateTask: (taskId: string, updates: Partial<Task>) => Promise<void>;
   deleteTask: (taskId: string) => Promise<void>;
@@ -213,6 +214,43 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     return { error: null, workspace: ws };
   }
 
+  async function removeMember(userId: string): Promise<{ error: string | null; removed?: boolean }> {
+    if (!user || !activeWorkspace) return { error: 'No active workspace selected.' };
+
+    const currentMember = members.find(m => m.user_id === user.id);
+    if (!currentMember || (currentMember.role !== 'owner' && currentMember.role !== 'leader')) {
+      return { error: 'Only the workspace leader can remove members.' };
+    }
+
+    if (userId === user.id) {
+      return { error: 'You cannot remove yourself from the workspace.' };
+    }
+
+    const targetMember = members.find(m => m.user_id === userId);
+    if (!targetMember) {
+      return { error: 'Member was not found in this workspace.' };
+    }
+
+    const { error } = await supabase.from('workspace_members').delete()
+      .eq('workspace_id', activeWorkspace.id)
+      .eq('user_id', userId);
+
+    if (error) {
+      return { error: error.message || 'Failed to remove member.' };
+    }
+
+    await supabase.from('notifications').insert({
+      workspace_id: activeWorkspace.id,
+      actor_id: user.id,
+      message: `${profile?.full_name || 'A leader'} removed ${targetMember.profile?.full_name || 'a member'} from the workspace`,
+      event_type: 'member_removed',
+    });
+
+    setMembers(prev => prev.filter(m => m.user_id !== userId));
+    await fetchWorkspaces();
+    return { error: null, removed: true };
+  }
+
   async function createTask(taskData: Partial<Task>) {
     if (!user || !activeWorkspace) return;
     const { data: task } = await supabase.from('tasks').insert({ ...taskData, workspace_id: activeWorkspace.id, created_by: user.id }).select().maybeSingle();
@@ -291,9 +329,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     await supabase.from('chat_messages').delete().eq('id', id);
   }
 
-  function markChatRead() {
+  const markChatRead = useCallback(() => {
     setLastReadChat(new Date().toISOString());
-  }
+  }, []);
 
   function refreshWorkspace() {
     if (activeWorkspace) loadWorkspaceData(activeWorkspace.id);
@@ -310,7 +348,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     <WorkspaceContext.Provider value={{
       workspaces, activeWorkspace, members, tasks, files, notifications, chatMessages,
       unreadCount, unreadChatCount, loadingWorkspace,
-      setActiveWorkspace, createWorkspace, joinWorkspace, createTask, updateTask, deleteTask,
+      setActiveWorkspace, createWorkspace, joinWorkspace, removeMember, createTask, updateTask, deleteTask,
       uploadFile, markNotificationsRead, sendChatMessage, deleteChatMessage, markChatRead, refreshWorkspace, createFloatingNotification,
     }}>
       {children}
