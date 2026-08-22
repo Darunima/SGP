@@ -84,17 +84,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     ]);
 
     const rawMembers = (myMemberRes.data ?? []) as WorkspaceMember[];
-    const taskData   = (tasksRes.data  ?? []) as Task[];
-    const fileData   = (filesRes.data  ?? []) as FileRecord[];
-    const notifData  = (notifRes.data  ?? []) as Notification[];
     const ownerId    = workspaceRes.data?.owner_id as string | undefined;
-    const chatData   = (chatRes.data   ?? []) as ChatMessage[];
 
-    // Only show actual workspace members. Do not reconstruct ghost users from task/file/chat activity,
-    // otherwise a removed member can reappear if they previously created tasks or chat messages.
     const memberUserIds = new Set<string>();
     rawMembers.forEach(m => memberUserIds.add(m.user_id));
     if (ownerId) memberUserIds.add(ownerId);
+
+    const taskData = ((tasksRes.data ?? []) as Task[]).filter(task => {
+      return (!task.assigned_to || memberUserIds.has(task.assigned_to)) && memberUserIds.has(task.created_by);
+    });
+    const fileData = ((filesRes.data ?? []) as FileRecord[]).filter(file => memberUserIds.has(file.uploaded_by));
+    const notifData = ((notifRes.data ?? []) as Notification[]).filter(notif => memberUserIds.has(notif.actor_id));
+    const chatData = ((chatRes.data ?? []) as ChatMessage[]).filter(message => memberUserIds.has(message.user_id));
 
     const allUserIds = [...memberUserIds];
     let finalMembers = rawMembers;
@@ -233,14 +234,24 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return { error: error.message || 'Failed to remove member.' };
     }
 
-    await supabase.from('notifications').insert({
-      workspace_id: activeWorkspace.id,
-      actor_id: user.id,
-      message: `${profile?.full_name || 'A leader'} removed ${targetMember.profile?.full_name || 'a member'} from the workspace`,
-      event_type: 'member_removed',
-    });
+    await Promise.all([
+      supabase.from('tasks').update({ assigned_to: null }).eq('workspace_id', activeWorkspace.id).eq('assigned_to', userId),
+      supabase.from('files').delete().eq('workspace_id', activeWorkspace.id).eq('uploaded_by', userId),
+      supabase.from('chat_messages').delete().eq('workspace_id', activeWorkspace.id).eq('user_id', userId),
+      supabase.from('notifications').delete().eq('workspace_id', activeWorkspace.id).eq('actor_id', userId),
+      supabase.from('notifications').insert({
+        workspace_id: activeWorkspace.id,
+        actor_id: user.id,
+        message: `${profile?.full_name || 'A leader'} removed ${targetMember.profile?.full_name || 'a member'} from the workspace`,
+        event_type: 'member_removed',
+      }),
+    ]);
 
     setMembers(prev => prev.filter(m => m.user_id !== userId));
+    setTasks(prev => prev.filter(task => task.assigned_to !== userId && task.created_by !== userId));
+    setFiles(prev => prev.filter(file => file.uploaded_by !== userId));
+    setNotifications(prev => prev.filter(notif => notif.actor_id !== userId));
+    setChatMessages(prev => prev.filter(msg => msg.user_id !== userId));
     await fetchWorkspaces();
     return { error: null, removed: true };
   }
