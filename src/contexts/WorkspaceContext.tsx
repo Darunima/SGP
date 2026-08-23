@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef, ReactNode } from 'react';
 import { supabase, Workspace, WorkspaceMember, Task, FileRecord, Notification, ChatMessage } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 
@@ -42,6 +42,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [lastReadChat, setLastReadChat] = useState<string>(new Date().toISOString());
   const [loadingWorkspace, setLoadingWorkspace] = useState(false);
+  const workspaceLoadVersion = useRef(0);
 
   const unreadCount = notifications.filter(n => !n.read_by.includes(user?.id ?? '')).length;
   const unreadChatCount = chatMessages.filter(m => m.user_id !== user?.id && m.created_at > lastReadChat).length;
@@ -72,6 +73,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [user]); // eslint-disable-line
 
   const loadWorkspaceData = useCallback(async (wsId: string) => {
+    const loadVersion = ++workspaceLoadVersion.current;
     setLoadingWorkspace(true);
 
     const [myMemberRes, tasksRes, filesRes, notifRes, workspaceRes, chatRes] = await Promise.all([
@@ -119,6 +121,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         } as WorkspaceMember;
       });
     }
+
+    if (loadVersion !== workspaceLoadVersion.current) return;
 
     setMembers(finalMembers);
     setTasks(taskData);
@@ -234,6 +238,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return { error: error.message || 'Failed to remove member.' };
     }
 
+    workspaceLoadVersion.current += 1;
+
     await Promise.all([
       supabase.from('tasks').update({ assigned_to: null }).eq('workspace_id', activeWorkspace.id).eq('assigned_to', userId),
       supabase.from('files').delete().eq('workspace_id', activeWorkspace.id).eq('uploaded_by', userId),
@@ -252,6 +258,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setFiles(prev => prev.filter(file => file.uploaded_by !== userId));
     setNotifications(prev => prev.filter(notif => notif.actor_id !== userId));
     setChatMessages(prev => prev.filter(msg => msg.user_id !== userId));
+    await loadWorkspaceData(activeWorkspace.id);
     await fetchWorkspaces();
     return { error: null, removed: true };
   }
