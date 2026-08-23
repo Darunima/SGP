@@ -119,6 +119,17 @@ CREATE POLICY "Members can update own membership"
     )
   );
 
+DROP POLICY IF EXISTS "Owners can remove workspace members" ON workspace_members;
+CREATE POLICY "Owners can remove workspace members"
+  ON workspace_members FOR DELETE TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM workspaces
+      WHERE workspaces.id = workspace_members.workspace_id
+      AND workspaces.owner_id = auth.uid()
+    )
+  );
+
 -- TASKS
 CREATE TABLE IF NOT EXISTS tasks (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

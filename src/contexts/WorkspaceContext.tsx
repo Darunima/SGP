@@ -230,12 +230,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return { error: 'Member was not found in this workspace.' };
     }
 
-    const { error } = await supabase.from('workspace_members').delete()
+    const { data: deletedMembers, error } = await supabase.from('workspace_members').delete()
       .eq('workspace_id', activeWorkspace.id)
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .select('id');
 
     if (error) {
       return { error: error.message || 'Failed to remove member.' };
+    }
+    if (!deletedMembers?.length) {
+      return { error: 'Member was not removed. Check the workspace member DELETE policy in Supabase.' };
     }
 
     workspaceLoadVersion.current += 1;

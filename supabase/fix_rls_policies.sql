@@ -63,4 +63,17 @@ CREATE POLICY "Members can update own membership"
     )
   );
 
+-- 6. Allow workspace owners to remove members
+DROP POLICY IF EXISTS "Owners can remove workspace members" ON workspace_members;
+CREATE POLICY "Owners can remove workspace members"
+  ON workspace_members FOR DELETE
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM workspaces
+      WHERE workspaces.id = workspace_members.workspace_id
+      AND workspaces.owner_id = auth.uid()
+    )
+  );
+
 -- Done! All policies fixed.

@@ -132,5 +132,12 @@ CREATE POLICY "Members can update own membership"
     SELECT 1 FROM workspaces WHERE id = workspace_id AND owner_id = auth.uid()
   ));
 
+CREATE POLICY "Owners can remove workspace members"
+  ON workspace_members FOR DELETE
+  TO authenticated
+  USING (EXISTS (
+    SELECT 1 FROM workspaces WHERE workspaces.id = workspace_members.workspace_id AND workspaces.owner_id = auth.uid()
+  ));
+
 CREATE INDEX IF NOT EXISTS idx_workspace_members_workspace ON workspace_members(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_workspace_members_user ON workspace_members(user_id);
