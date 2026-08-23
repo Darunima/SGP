@@ -233,6 +233,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return { error: 'Member was not found in this workspace.' };
     }
 
+    const removedMemberKey = `${activeWorkspace.id}:${userId}`;
+    removedMemberKeys.current.add(removedMemberKey);
+    setMembers(prev => prev.filter(m => m.user_id !== userId));
+    setTasks(prev => prev.filter(task => task.assigned_to !== userId && task.created_by !== userId));
+    setFiles(prev => prev.filter(file => file.uploaded_by !== userId));
+    setNotifications(prev => prev.filter(notif => notif.actor_id !== userId));
+    setChatMessages(prev => prev.filter(msg => msg.user_id !== userId));
+
     const { error } = await supabase.from('workspace_members').delete()
       .eq('workspace_id', activeWorkspace.id)
       .eq('user_id', userId);
@@ -255,7 +263,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return { error: 'Member was not removed. Check the workspace member DELETE policy in Supabase.' };
     }
 
-    removedMemberKeys.current.add(`${activeWorkspace.id}:${userId}`);
     workspaceLoadVersion.current += 1;
 
     await Promise.all([
@@ -271,11 +278,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }),
     ]);
 
-    setMembers(prev => prev.filter(m => m.user_id !== userId));
-    setTasks(prev => prev.filter(task => task.assigned_to !== userId && task.created_by !== userId));
-    setFiles(prev => prev.filter(file => file.uploaded_by !== userId));
-    setNotifications(prev => prev.filter(notif => notif.actor_id !== userId));
-    setChatMessages(prev => prev.filter(msg => msg.user_id !== userId));
     await loadWorkspaceData(activeWorkspace.id);
     await fetchWorkspaces();
     return { error: null, removed: true };
