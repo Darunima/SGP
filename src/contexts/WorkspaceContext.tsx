@@ -43,6 +43,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [lastReadChat, setLastReadChat] = useState<string>(new Date().toISOString());
   const [loadingWorkspace, setLoadingWorkspace] = useState(false);
   const workspaceLoadVersion = useRef(0);
+  const removedMemberKeys = useRef(new Set<string>());
 
   const unreadCount = notifications.filter(n => !n.read_by.includes(user?.id ?? '')).length;
   const unreadChatCount = chatMessages.filter(m => m.user_id !== user?.id && m.created_at > lastReadChat).length;
@@ -85,7 +86,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       supabase.from('chat_messages').select('*, sender:profiles!chat_messages_user_id_fkey(*)').eq('workspace_id', wsId).order('created_at', { ascending: true }).limit(100),
     ]);
 
-    const rawMembers = (myMemberRes.data ?? []) as WorkspaceMember[];
+    const rawMembers = ((myMemberRes.data ?? []) as WorkspaceMember[]).filter(member =>
+      !removedMemberKeys.current.has(`${wsId}:${member.user_id}`)
+    );
     const ownerId    = workspaceRes.data?.owner_id as string | undefined;
 
     const memberUserIds = new Set<string>();
@@ -242,6 +245,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return { error: 'Member was not removed. Check the workspace member DELETE policy in Supabase.' };
     }
 
+    removedMemberKeys.current.add(`${activeWorkspace.id}:${userId}`);
     workspaceLoadVersion.current += 1;
 
     await Promise.all([
