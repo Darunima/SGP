@@ -63,12 +63,20 @@ CREATE TABLE IF NOT EXISTS workspace_members (
 
 ALTER TABLE workspace_members ENABLE ROW LEVEL SECURITY;
 
+CREATE OR REPLACE FUNCTION public.is_workspace_owner(target_workspace_id uuid, target_user_id uuid DEFAULT auth.uid())
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
+AS $$ SELECT EXISTS (SELECT 1 FROM public.workspaces WHERE id = target_workspace_id AND owner_id = target_user_id); $$;
+
+CREATE OR REPLACE FUNCTION public.is_workspace_member(target_workspace_id uuid, target_user_id uuid DEFAULT auth.uid())
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
+AS $$ SELECT EXISTS (SELECT 1 FROM public.workspace_members WHERE workspace_id = target_workspace_id AND user_id = target_user_id); $$;
+
 -- WORKSPACES RLS (references workspace_members which now exists)
 DROP POLICY IF EXISTS "Members can view their workspaces" ON workspaces;
 CREATE POLICY "Members can view their workspaces"
   ON workspaces FOR SELECT TO authenticated
   USING (
-    true
+    owner_id = auth.uid() OR public.is_workspace_member(id, auth.uid())
   );
 
 DROP POLICY IF EXISTS "Authenticated users can create workspaces" ON workspaces;
@@ -90,7 +98,7 @@ CREATE POLICY "Owners can delete workspace"
 DROP POLICY IF EXISTS "Members can view workspace members" ON workspace_members;
 CREATE POLICY "Members can view workspace members"
   ON workspace_members FOR SELECT TO authenticated
-  USING (true); -- Breaks infinite recursion; safe as workspace data itself is protected by its own RLS
+  USING (user_id = auth.uid() OR public.is_workspace_owner(workspace_id, auth.uid()));
 
 DROP POLICY IF EXISTS "Members can join workspace" ON workspace_members;
 CREATE POLICY "Members can join workspace"
@@ -101,22 +109,10 @@ DROP POLICY IF EXISTS "Members can update own membership" ON workspace_members;
 CREATE POLICY "Members can update own membership"
   ON workspace_members FOR UPDATE TO authenticated
   USING (
-    auth.uid() = user_id
-    OR EXISTS (
-      SELECT 1 FROM workspace_members m
-      WHERE m.workspace_id = workspace_members.workspace_id
-      AND m.user_id = auth.uid()
-      AND m.role = 'owner'
-    )
+    auth.uid() = user_id OR public.is_workspace_owner(workspace_id, auth.uid())
   )
   WITH CHECK (
-    auth.uid() = user_id
-    OR EXISTS (
-      SELECT 1 FROM workspace_members m
-      WHERE m.workspace_id = workspace_members.workspace_id
-      AND m.user_id = auth.uid()
-      AND m.role = 'owner'
-    )
+    auth.uid() = user_id OR public.is_workspace_owner(workspace_id, auth.uid())
   );
 
 DROP POLICY IF EXISTS "Owners can remove workspace members" ON workspace_members;
@@ -129,6 +125,11 @@ CREATE POLICY "Owners can remove workspace members"
       AND workspaces.owner_id = auth.uid()
     )
   );
+
+DROP POLICY IF EXISTS "Members can leave workspace" ON workspace_members;
+CREATE POLICY "Members can leave workspace"
+  ON workspace_members FOR DELETE TO authenticated
+  USING (auth.uid() = user_id);
 
 -- TASKS
 CREATE TABLE IF NOT EXISTS tasks (

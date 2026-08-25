@@ -16,6 +16,8 @@ type WorkspaceContextType = {
   setActiveWorkspace: (ws: Workspace) => void;
   createWorkspace: (title: string, description: string, timelineDays?: number) => Promise<Workspace | null>;
   joinWorkspace: (inviteCode: string) => Promise<{ error: string | null; workspace?: Workspace }>;
+  leaveWorkspace: (workspaceId: string) => Promise<{ error: string | null }>;
+  deleteWorkspace: (workspaceId: string) => Promise<{ error: string | null }>;
   removeMember: (userId: string) => Promise<{ error: string | null; removed?: boolean }>;
   createTask: (task: Partial<Task>) => Promise<void>;
   updateTask: (taskId: string, updates: Partial<Task>) => Promise<void>;
@@ -189,7 +191,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const workspaceDescription = `${description.trim()}${timelineDays > 0 ? `\nTimeline: ${timelineDays} days` : ''}`.trim();
     const { data: ws, error } = await supabase.from('workspaces').insert({ title, description: workspaceDescription, owner_id: user.id }).select().maybeSingle();
     if (error || !ws) { alert(`Failed to create workspace: ${error?.message || 'Unknown error'}`); return null; }
-    await supabase.from('workspace_members').insert({ workspace_id: ws.id, user_id: user.id, role: 'owner' });
+    const { error: memberError } = await supabase.from('workspace_members').insert({ workspace_id: ws.id, user_id: user.id, role: 'owner' });
+    if (memberError) {
+      await supabase.from('workspaces').delete().eq('id', ws.id);
+      alert(`Failed to add workspace owner: ${memberError.message}`);
+      return null;
+    }
     const { data: fullWs } = await supabase.from('workspaces').select('*').eq('id', ws.id).maybeSingle();
     const finalWs = fullWs ?? ws;
     setWorkspaces(prev => [finalWs, ...prev]);
@@ -214,6 +221,55 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     await supabase.from('notifications').insert({ workspace_id: ws.id, actor_id: user.id, message: `${profile?.full_name || 'Someone'} joined the workspace`, event_type: 'member_joined' });
     await fetchWorkspaces();
     return { error: null, workspace: ws };
+  }
+
+  async function leaveWorkspace(workspaceId: string): Promise<{ error: string | null }> {
+    if (!user) return { error: 'Not authenticated.' };
+
+    const { error } = await supabase.from('workspace_members').delete()
+      .eq('workspace_id', workspaceId)
+      .eq('user_id', user.id);
+
+    if (error) return { error: error.message || 'Failed to leave workspace.' };
+
+    const remaining = (await fetchWorkspaces()) ?? [];
+    const nextWorkspace = remaining[0] ?? null;
+    setActiveWorkspaceState(nextWorkspace);
+    if (nextWorkspace) {
+      await loadWorkspaceData(nextWorkspace.id);
+    } else {
+      setMembers([]);
+      setTasks([]);
+      setFiles([]);
+      setNotifications([]);
+      setChatMessages([]);
+    }
+    return { error: null };
+  }
+
+  async function deleteWorkspace(workspaceId: string): Promise<{ error: string | null }> {
+    if (!user) return { error: 'Not authenticated.' };
+    const workspace = workspaces.find(item => item.id === workspaceId);
+    if (!workspace || workspace.owner_id !== user.id) {
+      return { error: 'Only the workspace owner can delete this workspace.' };
+    }
+
+    const { error } = await supabase.from('workspaces').delete().eq('id', workspaceId);
+    if (error) return { error: error.message || 'Failed to delete workspace.' };
+
+    const remaining = (await fetchWorkspaces()) ?? [];
+    const nextWorkspace = remaining[0] ?? null;
+    setActiveWorkspaceState(nextWorkspace);
+    if (nextWorkspace) {
+      await loadWorkspaceData(nextWorkspace.id);
+    } else {
+      setMembers([]);
+      setTasks([]);
+      setFiles([]);
+      setNotifications([]);
+      setChatMessages([]);
+    }
+    return { error: null };
   }
 
   async function removeMember(userId: string): Promise<{ error: string | null; removed?: boolean }> {
@@ -378,7 +434,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     <WorkspaceContext.Provider value={{
       workspaces, activeWorkspace, members, tasks, files, notifications, chatMessages,
       unreadCount, unreadChatCount, loadingWorkspace,
-      setActiveWorkspace, createWorkspace, joinWorkspace, removeMember, createTask, updateTask, deleteTask,
+      setActiveWorkspace, createWorkspace, joinWorkspace, leaveWorkspace, deleteWorkspace, removeMember, createTask, updateTask, deleteTask,
       uploadFile, markNotificationsRead, sendChatMessage, deleteChatMessage, markChatRead, refreshWorkspace, createFloatingNotification,
     }}>
       {children}
